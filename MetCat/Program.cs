@@ -65,7 +65,7 @@ namespace MetCat {
 			}
 			if (_output == "") {
 				Console.WriteLine("No output file was specified\n");
-				Environment.Exit(2);
+				_output = _directory + "/MetCatOutput.pdf";
 			}
 
 			//Handle * input to pull all matching files
@@ -93,7 +93,7 @@ namespace MetCat {
 				foreach (System.IO.FileInfo file in allFiles) {
 					_allInputs.Add(file.FullName);
 					if (_verbose) {
-						Console.SetCursorPosition(0, Console.CursorTop - 1);
+						try {Console.SetCursorPosition(0, Console.CursorTop - 1);} catch{}
 						_verPN++;
 						float pcnt = ((float)_verPN / (float)_verPD);
 						Console.WriteLine(pcnt.ToString("%0.0") + " Complete");
@@ -176,7 +176,7 @@ namespace MetCat {
 					pdfInStream.Dispose();
 					sucCat++;
 					if (_verbose) {
-						Console.SetCursorPosition(0, Console.CursorTop - 1);
+						try {Console.SetCursorPosition(0, Console.CursorTop - 1);} catch{}
 						Console.WriteLine(sucCat + " of " + _validInputs.Count + " Succeeded Concatenation");
 					}
 				} catch (iTextSharp.text.DocumentException) { } catch (System.IO.IOException) { } catch {
@@ -224,7 +224,7 @@ namespace MetCat {
 					}
 				}
 				if (verbose) {
-					Console.SetCursorPosition(0, Console.CursorTop - 1);
+					try {Console.SetCursorPosition(0, Console.CursorTop - 1);} catch{}
 					num++;
 					float pcnt = ((float)num / (float)dem);
 					Console.WriteLine(pcnt.ToString("%0.0") + " Complete");
@@ -257,7 +257,7 @@ namespace MetCat {
 					}
 				}
 				if (verbose) {
-					Console.SetCursorPosition(0, Console.CursorTop - 1);
+					try {Console.SetCursorPosition(0, Console.CursorTop - 1);} catch{}
 					num++;
 					float pcnt = ((float)num / (float)dem);
 					Console.WriteLine(pcnt.ToString("%0.0") + " Complete");
