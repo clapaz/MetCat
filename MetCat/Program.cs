@@ -12,6 +12,21 @@ namespace MetCat {
 	}
 
 	class Program {
+		static bool IsFileLocked(System.IO.FileInfo file) {
+			System.IO.FileStream stream = null;
+			try {
+				stream = file.Open(System.IO.FileMode.Open, System.IO.FileAccess.ReadWrite, System.IO.FileShare.None);
+			} catch(System.IO.IOException) {
+				//the file is unavailable 
+				return true;
+			} finally {
+				if(stream != null)
+					stream.Close();
+			}
+			//file is not locked
+			return false;
+		}
+
 		static void Main(string[] args) {
 			//Import command line arguments
 			string[] _args = Environment.GetCommandLineArgs();
@@ -316,6 +331,7 @@ namespace MetCat {
 				}
 			}
 			Cat.Close();
+			pdfOutStream.Dispose();
 		}
 
 		//Outputs a new PDF to the _output from the _validInput
@@ -354,6 +370,7 @@ namespace MetCat {
 				pdfInStream.Dispose();
 			}
 			Cat.Close();
+			pdfOutStream.Dispose();
 		}
 
 		static void pdfOutputBatches(string _output, List<string> _validInputs, bool _verbose, int _totalAmtPages, int _batchSize, bool retain) {
@@ -364,13 +381,20 @@ namespace MetCat {
 				_validInputs.Add(_output + "TempForBatch.pdf");
 			}
 			iTextSharp.text.pdf.PdfReader pdfItem = new iTextSharp.text.pdf.PdfReader(_validInputs[0]);
-			if(pdfItem.NumberOfPages < _batchSize) {
-				pdfOutput(_output, _validInputs, _verbose);
-				if(!retain) { System.IO.File.Delete(_validInputs[0]); }
-				return;
-			}
+			int numPages = pdfItem.NumberOfPages;
+			pdfItem.Dispose();
 			if(_output.Contains(".pdf", StringComparison.OrdinalIgnoreCase)) {
 				_output = _output.Remove(_output.IndexOf(".pdf", StringComparison.OrdinalIgnoreCase));
+			}
+			if(numPages < _batchSize) {
+				pdfOutput(_output + "_Result.pdf", _validInputs, _verbose);
+				if(!retain) {
+					System.IO.FileInfo outFile = new System.IO.FileInfo(_output + ".pdf");
+					while(IsFileLocked(outFile)) System.Threading.Thread.Sleep(500);
+					outFile.Delete();
+					System.IO.File.Move(_output + "_Result.pdf", _output + ".pdf");
+				}
+				return;
 			}
 			int _numBatches = (int)(_totalAmtPages / _batchSize) + 1;
 			int _currentBatch = 1;
