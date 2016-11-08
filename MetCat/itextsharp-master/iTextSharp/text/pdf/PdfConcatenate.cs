@@ -91,14 +91,32 @@ namespace iTextSharp.text.pdf {
                 copy.AddPage(copy.GetImportedPage(reader, i));
             }
             copy.FreeReader(reader);
-            reader.Close();
+            //reader.Close();
             return n;
         }
-        
-        /**
+
+		/**
+         * Adds the page range from an existing PDF document.
+         * @param reader    the reader for the existing PDF document
+         * @return          the number of pages that were added
+         * @throws DocumentException
+         * @throws IOException
+         */
+		virtual public int AddPages(PdfReader reader, int startPage, int stopPage) {
+			Open();
+			//int n = reader.NumberOfPages;
+			for(int i = startPage; i <= stopPage; i++) {
+				copy.AddPage(copy.GetImportedPage(reader, i));
+			}
+			copy.FreeReader(reader);
+			//reader.Close();
+			return stopPage - startPage;
+		}
+
+		/**
          * Gets the PdfCopy instance so that you can add bookmarks or change preferences before you close PdfConcatenate.
          */
-        virtual public PdfCopy Writer {
+		virtual public PdfCopy Writer {
             get {
                 return copy;
             }

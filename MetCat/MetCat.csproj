@@ -74,6 +74,10 @@
     <ApplicationIcon>Metro.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Ghostscript.NET, Version=1.2.0.0, Culture=neutral, PublicKeyToken=f85051de34525b59, processorArchitecture=MSIL">
+      <HintPath>..\packages\Ghostscript.NET.1.2.0\lib\net40\Ghostscript.NET.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
@@ -1899,6 +1903,7 @@
     <None Include="itextsharp-master\iTextSharp\text\pdf\fonts\Times-Italic.afm" />
     <None Include="itextsharp-master\iTextSharp\text\pdf\fonts\Times-Roman.afm" />
     <None Include="itextsharp-master\iTextSharp\text\pdf\fonts\ZapfDingbats.afm" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="itextsharp-master\iTextSharp\text\AGPL.txt" />

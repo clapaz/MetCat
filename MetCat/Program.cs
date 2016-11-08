@@ -30,6 +30,7 @@ namespace MetCat {
 		static void Main(string[] args) {
 			//Import command line arguments
 			string[] _args = Environment.GetCommandLineArgs();
+			//string[] _args = new[] { "-i","L-37457 batch 1.pdf","-o","L-37457 batch 1.pdf","-bic","1","-ro","-v","-t","1" };
 
 			//Parse arguments and set relevant flags
 			//-i|--input : Comma delimited list, space optional, of 
@@ -52,6 +53,8 @@ namespace MetCat {
 			int _verPD = 0;
 			bool _recursive = false;
 			bool _retain = false;
+			int _batchByImageComparison = 0;
+			float _bicTolerance = 1.0f;
 
 			for (int n = 0; n < _args.Length; n++) {
 				if (_args[n].Equals("-i", StringComparison.OrdinalIgnoreCase) || _args[n].Equals("--input", StringComparison.OrdinalIgnoreCase)) {
@@ -68,6 +71,12 @@ namespace MetCat {
 				if(_args[n].Equals("-b", StringComparison.OrdinalIgnoreCase) || _args[n].Equals("--batch", StringComparison.OrdinalIgnoreCase)) {
 					Int32.TryParse(_args[n + 1], out _batchSize);
 				}
+				if(_args[n].Equals("-bic", StringComparison.OrdinalIgnoreCase) || _args[n].Equals("--batchByImageComparison", StringComparison.OrdinalIgnoreCase)) {
+					Int32.TryParse(_args[n + 1], out _batchByImageComparison);
+				}
+				if(_args[n].Equals("-t", StringComparison.OrdinalIgnoreCase) || _args[n].Equals("--tolerance", StringComparison.OrdinalIgnoreCase)) {
+					_bicTolerance = float.Parse(_args[n + 1], System.Globalization.NumberStyles.Float);
+				}
 				if(_args[n].Equals("-ro", StringComparison.OrdinalIgnoreCase) || _args[n].Equals("--retainOriginal", StringComparison.OrdinalIgnoreCase)) {
 					_retain = true;
 				}
@@ -82,6 +91,8 @@ namespace MetCat {
 					Console.WriteLine("-i|--input\nComma delimited list (,) with no spaces of all input file names with .pdf assumed. File names containing commas will cause errors. Directory seperately stored for * (all) inputs. If omitted then cat all files in local directory\neg: -i 'C:/User/Files/MyPDFs/*.pdf'\n");
 					Console.WriteLine("-o|--output\nOutput file name, will overwrite, .pdf assumed.\neg: -o 'C:/User/Desktop/SaveLocation/The Output.pdf'\n");
 					Console.WriteLine("-b|--batch\n(Optional) A single number denoting the size of each output batch file in pages. Appends _Batch_# to the end of the output file name\neg: -b 500\n");
+					Console.WriteLine("-bic|--batchByImageComparison\n(Optional) A single number denoting a page to use as a master page in image comparison. Will then batch the document by image comparison based on this master page.\neg: -bic 27\n");
+					Console.WriteLine("-t|--tolerance\n(Optional) A single floating point number denoting the maximum tolerance of a -bic command in percent. Defaults to %1.0.\neg: -t 42.876\n");
 					Console.WriteLine("-ro|--retainOriginal\n(Optional) Retain the original file when batching, don't delete it\n");
 					Console.WriteLine("-v|--verbose\n(Optional) Output all logging lines\n");
 					Console.WriteLine("-r|--recursive\n(Optional) When given an all command will search in the directory with recursion\n");
@@ -193,26 +204,11 @@ namespace MetCat {
 				Console.WriteLine("Attempting to create file regardless.\n");
 			}
 
-			//Get the total number of pages in the cat
-			iTextSharp.text.pdf.PdfReader pdfItem = null;
-			foreach(string item in _validInputs) {
-				try {
-					pdfItem = new iTextSharp.text.pdf.PdfReader(item);
-					_totalAmtPages += pdfItem.NumberOfPages;
-					pdfItem.Dispose();
-					if(_verbose) {
-						Console.WriteLine("Getting total amount of pages: " + _totalAmtPages.ToString());
-					}
-				} catch(iTextSharp.text.DocumentException) { } catch(System.IO.IOException) { } catch {
-					Console.WriteLine(item + " Failed Concatenation\n");
-					_validInputs.Remove(item);
-					pdfItem.Dispose();
-				}
-			}
-
 			//Cat pdf onto the output one at a time
 			if(_batchSize > 0) {
 				pdfOutputBatches(_output, _validInputs, _verbose, _totalAmtPages, _batchSize, _retain);
+			} else if (_batchByImageComparison > 0) {
+				batchByImageComparison(_validInputs[0], _batchByImageComparison, _bicTolerance, _verbose, _retain);
 			} else {
 				pdfOutput(_output, _validInputs, _verbose);
 			}
@@ -298,13 +294,26 @@ namespace MetCat {
 		}
 
 		//Outputs a new PDF to the _output from the _validInputs
-		static void pdfOutput(string _output, List<string> _validInputs, bool _verbose) {
+		static string pdfOutput(string _output, List<string> _validInputs, bool _verbose) {
+			if(_output.Contains(".pdf", StringComparison.OrdinalIgnoreCase)) {
+				_output = _output.Remove(_output.IndexOf(".pdf", StringComparison.OrdinalIgnoreCase));
+			}
 			System.IO.Stream pdfOutStream = null;
-			try {
-				pdfOutStream = new System.IO.FileStream(_output, System.IO.FileMode.Create);
-			} catch(System.IO.IOException) { } catch {
-				Console.WriteLine("There was an error writing to the output file\nIs it in use?");
-				Environment.Exit(7);
+			while(true) {
+				int n = 0;
+				try {
+					if(n == 0) {
+						pdfOutStream = new System.IO.FileStream(_output + ".pdf", System.IO.FileMode.Create);
+						_output = _output + ".pdf";
+					} else {
+						pdfOutStream = new System.IO.FileStream(_output + " (" + n.ToString() + ").pdf", System.IO.FileMode.Create);
+						_output = _output + " (" + n.ToString() + ").pdf";
+					}
+					break;
+				} catch(System.IO.IOException) { } catch {
+					Console.WriteLine("There was an error writing to the output file\nRenaming with iteration");
+					n++;
+				}
 			}
 			iTextSharp.text.pdf.PdfConcatenate Cat = null;
 			iTextSharp.text.pdf.PdfReader pdfInStream = null;
@@ -327,89 +336,196 @@ namespace MetCat {
 					}
 				} catch(iTextSharp.text.DocumentException) { } catch(System.IO.IOException) { } catch {
 					Console.WriteLine(item + " Failed Concatenation\n");
-					pdfInStream.Dispose();
 				}
 			}
 			Cat.Close();
 			pdfOutStream.Dispose();
+			return _output;
 		}
 
 		//Outputs a new PDF to the _output from the _validInput
 		//Output is constrained to the input page ranges for batching
-		static void pdfOutputBatch(string _output, List<string> _validInputs, bool _verbose, int _remainingPages, int _preceedingPages) {
-			System.IO.Stream pdfOutStream = null;
-			try {
-				pdfOutStream = new System.IO.FileStream(_output, System.IO.FileMode.Create);
-			} catch(System.IO.IOException) { } catch {
-				Console.WriteLine("There was an error writing to the output file\nIs it in use?");
-				Environment.Exit(7);
+		static void pdfOutputBatch(string _output, string _input, int _batchSize, bool _verbose) {
+			//Clean the output string
+			if(_output.Contains(".pdf", StringComparison.OrdinalIgnoreCase)) {
+				_output = _output.Remove(_output.IndexOf(".pdf", StringComparison.OrdinalIgnoreCase));
 			}
+			//Define reused vars
+			int currentPage = 0;
+			int numBatches = 0;
+			int numPages = 0;
 			iTextSharp.text.pdf.PdfConcatenate Cat = null;
-			iTextSharp.text.pdf.PdfReader pdfInStream = null;
-			try {
-				Cat = new iTextSharp.text.pdf.PdfConcatenate(pdfOutStream);
-			} catch {
-				Console.WriteLine("There was an error writing to the output file\nIs it in use?");
-				Environment.Exit(7);
-			}
-			try {
-				pdfInStream = new iTextSharp.text.pdf.PdfReader(_validInputs[0]);
-				int stopPage = _preceedingPages + _remainingPages - 1;
-				if(stopPage > pdfInStream.NumberOfPages) {
-					pdfInStream.SelectPages(_preceedingPages.ToString() + "-" + pdfInStream.NumberOfPages.ToString());
-				} else {
-					pdfInStream.SelectPages(_preceedingPages.ToString() + "-" + stopPage.ToString());
+			System.IO.Stream pdfOutStream = null;
+
+			//Open the input file
+			iTextSharp.text.pdf.PdfReader pdfInStream = new iTextSharp.text.pdf.PdfReader(_input);
+			numPages = pdfInStream.NumberOfPages;
+
+			//Determine the amount of batches
+			numBatches = (int)(numPages / _batchSize) + 1;
+
+			//Loop for the amount of batches
+			for(int n = 1; n <= numBatches; n++) {
+				try {
+					//Open the output file
+					pdfOutStream = new System.IO.FileStream(_output + "_Batch_" + n.ToString() + ".pdf", System.IO.FileMode.Create);
+					Cat = new iTextSharp.text.pdf.PdfConcatenate(pdfOutStream);
+
+					//Get the page range, accounting for file end
+					int start = currentPage+1;
+					currentPage = start + _batchSize - 1;
+					if(currentPage > numPages) currentPage = numPages;
+					if (_verbose) Console.WriteLine("From: " + start.ToString() + "\tTo: " + currentPage.ToString());
+					//pdfInStream.SelectPages(iTextSharp.text.pdf.SequenceList.Expand(start.ToString() + "-" + currentPage.ToString(), numPages), false);
+
+					//Cat the page range onto the output
+					Cat.AddPages(pdfInStream, start, currentPage);
+
+					//Close the cat
+					Cat.Close();
+					pdfOutStream.Dispose();
+				} catch(Exception e) {
+					Console.WriteLine("There was an error in the Batch Process");
+					Console.WriteLine(e);
 				}
-				Cat.AddPages(pdfInStream);
-				pdfInStream.Dispose();
-				if(_verbose) {
-					Console.WriteLine((stopPage - _preceedingPages + 1).ToString() + " Pages Batched");
-				}
-			} catch(iTextSharp.text.DocumentException) { } catch(System.IO.IOException) { } catch {
-				Console.WriteLine(_validInputs[0] + " Failed Batching Process\n");
-				pdfInStream.Dispose();
 			}
-			Cat.Close();
-			pdfOutStream.Dispose();
+			pdfInStream.Dispose();
 		}
 
 		static void pdfOutputBatches(string _output, List<string> _validInputs, bool _verbose, int _totalAmtPages, int _batchSize, bool retain) {
 			if(_validInputs.Count > 1) {
 				Console.WriteLine("\nCannot batch multiple files\nPerforming Cat and batch on result\n\n");
-				pdfOutput(_output + "TempForBatch.pdf", _validInputs, _verbose);
+				Random rInt = new Random();
+				string rInts = rInt.Next().ToString() + rInt.Next().ToString() + rInt.Next().ToString() + rInt.Next().ToString() + rInt.Next().ToString();
+				string newout = pdfOutput(_output + "TempForBatch" + rInts + ".pdf", _validInputs, _verbose);
 				_validInputs.Clear();
-				_validInputs.Add(_output + "TempForBatch.pdf");
+				_validInputs.Add(newout);
 			}
-			iTextSharp.text.pdf.PdfReader pdfItem = new iTextSharp.text.pdf.PdfReader(_validInputs[0]);
-			int numPages = pdfItem.NumberOfPages;
-			pdfItem.Dispose();
-			if(_output.Contains(".pdf", StringComparison.OrdinalIgnoreCase)) {
-				_output = _output.Remove(_output.IndexOf(".pdf", StringComparison.OrdinalIgnoreCase));
+
+			pdfOutputBatch(_output, _validInputs[0], _batchSize, _verbose);
+
+			if(!retain) {
+				System.IO.FileInfo outFile = new System.IO.FileInfo(_validInputs[0]);
+				while(IsFileLocked(outFile)) System.Threading.Thread.Sleep(500);
+				outFile.Delete();
 			}
-			if(numPages < _batchSize) {
-				pdfOutput(_output + "_Result.pdf", _validInputs, _verbose);
-				if(!retain) {
-					System.IO.FileInfo outFile = new System.IO.FileInfo(_output + ".pdf");
+		}
+
+		static string pdfRenderAsImage(string InputPDFFile, int PageNumber, int resolution) {
+			string outImageName = System.IO.Path.GetFileNameWithoutExtension(InputPDFFile);
+			outImageName = Environment.CurrentDirectory + "/" + outImageName + "_Pg_" + PageNumber.ToString() + ".png";
+			
+			
+			Ghostscript.NET.GhostscriptPngDevice dev = new Ghostscript.NET.GhostscriptPngDevice(Ghostscript.NET.GhostscriptPngDeviceType.Png256);
+			dev.GraphicsAlphaBits = Ghostscript.NET.GhostscriptImageDeviceAlphaBits.V_4;
+			dev.TextAlphaBits = Ghostscript.NET.GhostscriptImageDeviceAlphaBits.V_4;
+			dev.ResolutionXY = new Ghostscript.NET.GhostscriptImageDeviceResolution(resolution, resolution);
+			dev.InputFiles.Add(InputPDFFile);
+			dev.Pdf.FirstPage = PageNumber;
+			dev.Pdf.LastPage = PageNumber;
+			dev.CustomSwitches.Add("-dDOINTERPOLATE");
+			dev.OutputPath = outImageName;
+			dev.Process();
+
+			return outImageName;
+		}
+
+		static bool batchByImageComparison(string _input, int masterPage, float tolerance, bool verbose, bool retain) {
+			int Resolution = 16;
+			System.IO.FileInfo outFile;
+			bool match = false;
+			int curPage = 0;
+			int bookmark = 0;
+			iTextSharp.text.pdf.PdfReader pdfInStream = new iTextSharp.text.pdf.PdfReader(_input);
+			int numPages = pdfInStream.NumberOfPages;
+			string img1 = pdfRenderAsImage(_input, masterPage, Resolution);
+			//System.Drawing.Image image1 = System.Drawing.Image.FromFile(img1);
+			System.Drawing.Bitmap bmp1 = new System.Drawing.Bitmap(img1);
+			string img2 = "";
+			//System.Drawing.Image image2;
+
+			//Loop over all pages
+			while(curPage <= numPages) {
+				curPage++;
+				if(curPage != masterPage) {
+					img2 = pdfRenderAsImage(_input, curPage, Resolution);
+					//image2 = System.Drawing.Image.FromFile(img2);
+				} else {
+					img2 = img1;
+					//image2 = (System.Drawing.Image)image1.Clone();
+				}
+
+				//Compare the two images as linear pixel 4D Distance
+				System.Drawing.Bitmap bmp2 = new System.Drawing.Bitmap(img2);
+				System.Drawing.Color Color1, Color2;
+				//float A, R, G, B;
+				//double SSD;
+				float totalDifference = 0.0f;
+				for(int x = 0; x < bmp1.Width; x++) {
+					for(int y = 0; y < bmp1.Height; y++) {
+						try {
+							Color1 = bmp1.GetPixel(x, y);
+							Color2 = bmp2.GetPixel(x, y);
+							//A = Color1.A - Color2.A;
+							//R = Color1.R - Color2.R;
+							//G = Color1.G - Color2.G;
+							//B = Color1.B - Color2.B;
+							//A *= A; R *= R; G *= G; B *= B;
+							//SSD = A + R + G + B;
+							//totalDifference += Math.Sqrt(SSD);
+							totalDifference += Math.Abs((float)(Color1.A - Color2.A)) / 255.0f;
+							totalDifference += Math.Abs((float)(Color1.R - Color2.R)) / 255.0f;
+							totalDifference += Math.Abs((float)(Color1.G - Color2.G)) / 255.0f;
+							totalDifference += Math.Abs((float)(Color1.B - Color2.B)) / 255.0f;
+						} catch(Exception e) {
+							Console.WriteLine("Exception occurred at (" + x.ToString() + "," + y.ToString() + ")\n" + e);
+							Environment.Exit(0);
+						}
+					}
+				}
+				bmp2.Dispose();
+
+				//Remove the second image
+				if(curPage != masterPage) {
+					//image2.Dispose();
+					outFile = new System.IO.FileInfo(img2);
 					while(IsFileLocked(outFile)) System.Threading.Thread.Sleep(500);
 					outFile.Delete();
-					System.IO.File.Move(_output + "_Result.pdf", _output + ".pdf");
 				}
-				return;
-			}
-			int _numBatches = (int)(_totalAmtPages / _batchSize) + 1;
-			int _currentBatch = 1;
-			int _previousPages = 1;
-			//Loop over each individual output batch
-			for(int n = 0; n < _numBatches; n++) {
-				if(_verbose) {
-					Console.WriteLine("Beginning batch #" + _currentBatch.ToString());
+
+				//Mark the page if this is considered a match
+				//If there is already a mark then create a batch from the mark to the current area and reset the mark
+				totalDifference = (100 * totalDifference) / (bmp1.Width * bmp1.Height * 4);
+				if(verbose) Console.WriteLine("--Difference of : %" + totalDifference.ToString() + "\tOn : " + curPage);
+					if(totalDifference < tolerance) {
+					if(bookmark == 0) {
+						bookmark = curPage;
+					} else {
+						System.IO.Stream pdfOutStream = new System.IO.FileStream(_input + "_Pages_From_" + bookmark.ToString() + "_to_" + (curPage-1).ToString() + ".pdf", System.IO.FileMode.Create);
+						iTextSharp.text.pdf.PdfConcatenate Cat = new iTextSharp.text.pdf.PdfConcatenate(pdfOutStream);
+						Cat.AddPages(pdfInStream, bookmark, curPage-1);
+						Cat.Close();
+						pdfOutStream.Dispose();
+						bookmark = curPage;
+						match = true;
+					}
 				}
-				pdfOutputBatch(_output + "_Batch_" + _currentBatch.ToString() + ".pdf", _validInputs, _verbose, _batchSize, _previousPages);
-				_previousPages += _batchSize;
-				_currentBatch++;
 			}
-			pdfItem.Dispose();
-			if(!retain) { System.IO.File.Delete(_validInputs[0]); }
+
+			//Remove the first image
+			//image1.Dispose();
+			bmp1.Dispose();
+			outFile = new System.IO.FileInfo(img1);
+			while(IsFileLocked(outFile)) System.Threading.Thread.Sleep(500);
+			outFile.Delete();
+
+			if(!retain) {
+				System.IO.FileInfo inputFile = new System.IO.FileInfo(_input);
+				while(IsFileLocked(inputFile)) System.Threading.Thread.Sleep(500);
+				inputFile.Delete();
+			}
+
+			return match;
 		}
 	}
 }
